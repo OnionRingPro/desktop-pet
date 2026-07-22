@@ -8,6 +8,7 @@ from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QFont, QFontMetrics, QPixmap
 from PySide6.QtWidgets import QApplication, QLabel, QWidget
 
+from src.macos_window import apply_stay_visible_on_macos, enable_visible_when_inactive
 from src.resource_utils import resource_path
 
 MESSAGES_CONFIG = "config/messages.json"
@@ -87,6 +88,7 @@ class SpeechBubble(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        enable_visible_when_inactive(self)
 
     def _load_frame_pixmap(self) -> QPixmap:
         frame_path = resource_path(FRAME_IMAGE)
@@ -105,6 +107,7 @@ class SpeechBubble(QWidget):
         self._position_above_pet()
         self.show()
         self.raise_()
+        apply_stay_visible_on_macos(self)
         self._hide_timer.start(BUBBLE_AUTO_HIDE_MS)
 
     def _apply_message_layout(self, message: str) -> None:

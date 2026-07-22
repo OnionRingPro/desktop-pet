@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QCloseEvent, QMouseEvent, QActionGroup
+from PySide6.QtCore import QPoint, Qt, QTimer
+from PySide6.QtGui import QCloseEvent, QMouseEvent, QShowEvent, QActionGroup
 from PySide6.QtWidgets import (
     QApplication,
     QLabel,
@@ -18,6 +18,7 @@ from src.animation_manager import (
     AnimationState,
     STATE_LABELS,
 )
+from src.macos_window import apply_stay_visible_on_macos, enable_visible_when_inactive
 from src.resource_utils import resource_path
 from src.speech_bubble import SpeechBubble
 
@@ -57,6 +58,18 @@ class PetWindow(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        enable_visible_when_inactive(self)
+        enable_visible_when_inactive(self._speech_bubble)
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        QTimer.singleShot(0, self._apply_macos_visibility)
+        QTimer.singleShot(200, self._apply_macos_visibility)
+
+    def _apply_macos_visibility(self) -> None:
+        apply_stay_visible_on_macos(self)
+        if self._speech_bubble.isVisible():
+            apply_stay_visible_on_macos(self._speech_bubble)
 
     def _check_assets(self) -> None:
         fallback_path = resource_path(FALLBACK_IMAGE)
