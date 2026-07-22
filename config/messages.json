@@ -10,6 +10,14 @@
   "mood_idle_seconds": 45,
   "mood_happy_seconds": 12,
   "mood_drink_seconds": 10,
+  "sleep_inactivity_seconds": 100,
+  "sleep_duration_seconds": 100,
+  "wake_from_sleep_messages": [
+    "你回来啦！",
+    "睡够啦，精神满满！",
+    "嗯？干嘛拽我？"
+  ],
   "pet_display_size": 100,
+  "weather_city": "Montreal",
   "reminder_minutes": 45
 }

@@ -28,13 +28,15 @@ class AnimationState(Enum):
     HAPPY = "happy"
     DRINK = "drink"
     DRAGGING = "dragging"
+    SLEEP = "sleep"
 
 
 MENU_STATES = (
     AnimationState.IDLE,
-    AnimationState.WALK,
     AnimationState.HAPPY,
     AnimationState.DRINK,
+    AnimationState.SLEEP,
+    AnimationState.WALK,
     AnimationState.DRAGGING,
 )
 
@@ -43,6 +45,7 @@ STATE_LABELS = {
     AnimationState.WALK: "行走",
     AnimationState.HAPPY: "开心",
     AnimationState.DRINK: "喝水",
+    AnimationState.SLEEP: "睡觉",
     AnimationState.DRAGGING: "拖动",
 }
 
@@ -54,6 +57,7 @@ FRAME_MS = {
     AnimationState.HAPPY: 180,
     AnimationState.DRINK: 180,
     AnimationState.DRAGGING: 160,
+    AnimationState.SLEEP: 500,
 }
 
 
@@ -100,6 +104,10 @@ class AnimationManager:
 
     def available_states(self) -> list[AnimationState]:
         return [state for state in MENU_STATES if state in self._animations]
+
+    def has_state(self, state: AnimationState) -> bool:
+        animation = self._animations.get(state)
+        return animation is not None and bool(animation.frames)
 
     def set_state(self, state: AnimationState) -> None:
         self._paused = False
@@ -185,6 +193,7 @@ class AnimationManager:
             AnimationState.HAPPY,
             AnimationState.DRINK,
             AnimationState.DRAGGING,
+            AnimationState.SLEEP,
         ):
             frames = self._load_frames_from_dir(f"assets/{state.value}")
             if frames:

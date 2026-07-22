@@ -49,6 +49,7 @@ from src.macos_window import (
 from src.pet_scheduler import PetScheduler
 from src.resource_utils import resource_path
 from src.speech_bubble import SpeechBubble
+from src.weather_service import WeatherWorker
 
 FALLBACK_IMAGE = "assets/fallback.png"
 IDLE_DIR = "assets/idle"
@@ -62,6 +63,7 @@ class PetWindow(QWidget):
         self._sphere_mode = SphereDockMode.NONE
         self._sphere_anchor_y = 0
         self._sphere_allow_peep = False
+        self._weather_worker: WeatherWorker | None = None
 
         self._label = QLabel(self)
         self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -172,6 +174,7 @@ class PetWindow(QWidget):
         self.move(x, y)
 
     def contextMenuEvent(self, event) -> None:
+        self._scheduler.notify_user_activity()
         menu = QMenu(self)
         state_group = QActionGroup(menu)
         state_group.setExclusive(True)
@@ -211,12 +214,30 @@ class PetWindow(QWidget):
 
         menu.addSeparator()
 
+        weather_action = menu.addAction("问天气")
+        weather_action.setEnabled(self._weather_worker is None)
+        weather_action.triggered.connect(self._ask_weather)
+
         quit_action = menu.addAction("退出")
         quit_action.triggered.connect(QApplication.instance().quit)
         menu.exec(event.globalPos())
 
     def _set_animation_state(self, state: AnimationState) -> None:
         self._apply_animation_state(state, from_scheduler=False)
+
+    def _ask_weather(self) -> None:
+        if self._weather_worker is not None and self._weather_worker.isRunning():
+            return
+
+        self._speech_bubble.show_message("让我看看…")
+        worker = WeatherWorker(self)
+        worker.result.connect(self._speech_bubble.show_message)
+        worker.finished.connect(self._clear_weather_worker)
+        self._weather_worker = worker
+        worker.start()
+
+    def _clear_weather_worker(self) -> None:
+        self._weather_worker = None
 
     def _apply_animation_state(
         self,
@@ -230,10 +251,12 @@ class PetWindow(QWidget):
         if not from_scheduler:
             self._scheduler.on_manual_state(state)
         else:
-            self._scheduler.resume_mood()
+            self._scheduler.on_scheduler_state(state)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
+            self._scheduler.notify_user_activity()
+
             if self._sphere_mode is not SphereDockMode.NONE:
                 self._exit_sphere_dock()
 
@@ -420,6 +443,7 @@ class PetWindow(QWidget):
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
+            self._scheduler.notify_user_activity()
             self._dragging = False
             self._speech_bubble.show_for_pet()
             event.accept()

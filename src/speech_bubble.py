@@ -104,7 +104,9 @@ class SpeechBubble(QWidget):
         return pixmap
 
     def show_for_pet(self) -> None:
-        message = random.choice(self._messages)
+        self.show_message(random.choice(self._messages))
+
+    def show_message(self, message: str) -> None:
         self._apply_message_layout(message)
         self._position_above_pet()
         self.show()
