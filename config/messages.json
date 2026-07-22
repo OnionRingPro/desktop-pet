@@ -6,5 +6,8 @@
     "我会在桌面陪着你。",
     "今天的任务完成了吗？",
     "老公我爱你！"
-  ]
+  ],
+  "mood_idle_seconds": 45,
+  "mood_happy_seconds": 12,
+  "reminder_minutes": 45
 }

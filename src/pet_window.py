@@ -18,7 +18,16 @@ from src.animation_manager import (
     AnimationState,
     STATE_LABELS,
 )
+from src.edge_dock import (
+    DockEdge,
+    clamp_fully_on_screen,
+    detect_snap_edge,
+    dock_to_edge,
+    expand_from_dock,
+    is_docked,
+)
 from src.macos_window import apply_stay_visible_on_macos, enable_visible_when_inactive
+from src.pet_scheduler import PetScheduler
 from src.resource_utils import resource_path
 from src.speech_bubble import SpeechBubble
 
@@ -31,6 +40,7 @@ class PetWindow(QWidget):
         super().__init__()
         self._dragging = False
         self._drag_offset = QPoint()
+        self._docked_edge = DockEdge.NONE
 
         self._label = QLabel(self)
         self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -43,6 +53,7 @@ class PetWindow(QWidget):
         self._speech_bubble = SpeechBubble(self)
         self._animation = AnimationManager(self._label, self)
         self._selected_state = AnimationState.IDLE
+        self._scheduler = PetScheduler(self)
 
         self._setup_window()
         self._check_assets()
@@ -65,6 +76,7 @@ class PetWindow(QWidget):
         super().showEvent(event)
         QTimer.singleShot(0, self._apply_macos_visibility)
         QTimer.singleShot(200, self._apply_macos_visibility)
+        self._scheduler.start()
 
     def _apply_macos_visibility(self) -> None:
         apply_stay_visible_on_macos(self)
@@ -130,13 +142,30 @@ class PetWindow(QWidget):
         menu.exec(event.globalPos())
 
     def _set_animation_state(self, state: AnimationState) -> None:
+        self._apply_animation_state(state, from_scheduler=False)
+
+    def _apply_animation_state(
+        self,
+        state: AnimationState,
+        *,
+        from_scheduler: bool,
+    ) -> None:
         self._selected_state = state
         if not self._dragging:
             self._animation.set_state(state)
+        if not from_scheduler:
+            self._scheduler.on_manual_state(state)
+        else:
+            self._scheduler.resume_mood()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
+            if is_docked(self._docked_edge):
+                expand_from_dock(self, self._docked_edge)
+                self._docked_edge = DockEdge.NONE
+
             self._dragging = True
+            self._scheduler.pause_mood()
             self._animation.on_drag_start()
             global_pos = event.globalPosition().toPoint()
             self._drag_offset = global_pos - self.frameGeometry().topLeft()
@@ -156,9 +185,22 @@ class PetWindow(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = False
             self._animation.on_drag_end(self._selected_state)
+            self._apply_edge_dock()
+            self._scheduler.resume_mood()
             event.accept()
             return
         super().mouseReleaseEvent(event)
+
+    def _apply_edge_dock(self) -> None:
+        snap_edge = detect_snap_edge(self)
+        if snap_edge is not DockEdge.NONE:
+            dock_to_edge(self, snap_edge)
+            self._docked_edge = snap_edge
+            self._speech_bubble.hide_bubble()
+            return
+
+        self._docked_edge = DockEdge.NONE
+        clamp_fully_on_screen(self)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -169,6 +211,7 @@ class PetWindow(QWidget):
         super().mouseDoubleClickEvent(event)
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        self._scheduler.stop()
         self._animation.stop()
         self._speech_bubble.hide_bubble()
         super().closeEvent(event)

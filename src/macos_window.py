@@ -33,6 +33,8 @@ def apply_stay_visible_on_macos(widget: QWidget) -> bool:
         ns_window.setHidesOnDeactivate_(False)
     if hasattr(ns_window, "setFloatingPanel_"):
         ns_window.setFloatingPanel_(True)
+    if hasattr(ns_window, "setBecomesKeyOnlyIfNeeded_"):
+        ns_window.setBecomesKeyOnlyIfNeeded_(False)
 
     return True
 

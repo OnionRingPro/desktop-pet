@@ -22,15 +22,16 @@ DEFAULT_MESSAGES = [
 ]
 BUBBLE_AUTO_HIDE_MS = 4000
 BUBBLE_SCREEN_MARGIN = 8
-BUBBLE_PET_GAP = 6
+BUBBLE_PET_GAP = 4
 FRAME_SOURCE_WIDTH = 272
 FRAME_SOURCE_HEIGHT = 250
 FRAME_TEXT_LEFT = 38
 FRAME_TEXT_TOP = 32
 FRAME_TEXT_RIGHT = 234
 FRAME_TEXT_BOTTOM = 168
-FRAME_MAX_WIDTH = 360
-FRAME_MIN_WIDTH = 220
+FRAME_MIN_WIDTH = 120
+FRAME_MAX_WIDTH = 170
+FRAME_FONT_POINT_SIZE = 9
 
 
 def load_messages(config_path: Path | None = None) -> list[str]:
@@ -71,7 +72,7 @@ class SpeechBubble(QWidget):
             Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
         )
         font = QFont()
-        font.setPointSize(13)
+        font.setPointSize(FRAME_FONT_POINT_SIZE)
         self._text_label.setFont(font)
         self._text_label.setStyleSheet(
             "QLabel { background: transparent; color: #2b2b2b; }"
@@ -88,6 +89,7 @@ class SpeechBubble(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         enable_visible_when_inactive(self)
 
     def _load_frame_pixmap(self) -> QPixmap:
@@ -106,7 +108,6 @@ class SpeechBubble(QWidget):
         self._apply_message_layout(message)
         self._position_above_pet()
         self.show()
-        self.raise_()
         apply_stay_visible_on_macos(self)
         self._hide_timer.start(BUBBLE_AUTO_HIDE_MS)
 
@@ -166,7 +167,7 @@ class SpeechBubble(QWidget):
     def _apply_fallback_layout(self, message: str) -> None:
         self._frame_label.clear()
         self._frame_label.resize(0, 0)
-        self._text_label.setMaximumWidth(280)
+        self._text_label.setMaximumWidth(150)
         self._text_label.setStyleSheet(
             "QLabel {"
             "  background-color: rgba(255, 255, 255, 230);"
