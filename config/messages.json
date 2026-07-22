@@ -9,5 +9,7 @@
   ],
   "mood_idle_seconds": 45,
   "mood_happy_seconds": 12,
+  "mood_drink_seconds": 10,
+  "pet_display_size": 100,
   "reminder_minutes": 45
 }

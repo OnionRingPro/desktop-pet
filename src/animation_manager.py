@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QPixmap
@@ -11,9 +13,11 @@ from src.resource_utils import resource_path
 
 FALLBACK_IMAGE = "assets/fallback.png"
 IDLE_DIR = "assets/idle"
+MESSAGES_CONFIG = "config/messages.json"
 
-MAX_DISPLAY_WIDTH = 100
-MAX_DISPLAY_HEIGHT = 125
+DEFAULT_DISPLAY_MAX_SIZE = 100
+MIN_DISPLAY_MAX_SIZE = 80
+MAX_DISPLAY_MAX_SIZE = 280
 
 
 class AnimationState(Enum):
@@ -22,6 +26,7 @@ class AnimationState(Enum):
     WALK_LEFT = "walk_left"
     WALK_RIGHT = "walk_right"
     HAPPY = "happy"
+    DRINK = "drink"
     DRAGGING = "dragging"
 
 
@@ -29,6 +34,7 @@ MENU_STATES = (
     AnimationState.IDLE,
     AnimationState.WALK,
     AnimationState.HAPPY,
+    AnimationState.DRINK,
     AnimationState.DRAGGING,
 )
 
@@ -36,6 +42,7 @@ STATE_LABELS = {
     AnimationState.IDLE: "待机",
     AnimationState.WALK: "行走",
     AnimationState.HAPPY: "开心",
+    AnimationState.DRINK: "喝水",
     AnimationState.DRAGGING: "拖动",
 }
 
@@ -45,6 +52,7 @@ FRAME_MS = {
     AnimationState.WALK_LEFT: 120,
     AnimationState.WALK_RIGHT: 120,
     AnimationState.HAPPY: 180,
+    AnimationState.DRINK: 180,
     AnimationState.DRAGGING: 160,
 }
 
@@ -54,6 +62,18 @@ class Animation:
     frames: list[QPixmap]
     frame_ms: int
     loop: bool = True
+
+
+def load_display_max_size(config_path: Path | None = None) -> int:
+    path = config_path or resource_path(MESSAGES_CONFIG)
+    size = DEFAULT_DISPLAY_MAX_SIZE
+    try:
+        if path.exists():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            size = int(data.get("pet_display_size", size))
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        pass
+    return max(MIN_DISPLAY_MAX_SIZE, min(MAX_DISPLAY_MAX_SIZE, size))
 
 
 class AnimationManager:
@@ -66,6 +86,7 @@ class AnimationManager:
         self._frame_index = 0
         self._paused = False
         self._display_size: tuple[int, int] | None = None
+        self._display_max_size = load_display_max_size()
 
         self._timer = QTimer(parent)
         self._timer.timeout.connect(self._advance_frame)
@@ -98,6 +119,20 @@ class AnimationManager:
         self._paused = True
         self._timer.stop()
 
+    def pause_for_overlay(self) -> None:
+        self.pause()
+
+    def show_overlay_pixmap(self, pixmap: QPixmap) -> None:
+        self._timer.stop()
+        if pixmap.isNull():
+            return
+        self._label.setPixmap(pixmap)
+        self._label.resize(pixmap.size())
+        self._display_size = (pixmap.width(), pixmap.height())
+
+    def resume_after_overlay(self) -> None:
+        self.set_state(self._current_state)
+
     def on_drag_start(self) -> None:
         if AnimationState.DRAGGING in self._animations:
             self.set_state(AnimationState.DRAGGING)
@@ -110,13 +145,30 @@ class AnimationManager:
     def stop(self) -> None:
         self._timer.stop()
 
+    def display_max_size(self) -> int:
+        return self._display_max_size
+
+    def set_display_max_size(self, size: int) -> None:
+        self._display_max_size = max(
+            MIN_DISPLAY_MAX_SIZE,
+            min(MAX_DISPLAY_MAX_SIZE, size),
+        )
+        self.refresh_display()
+
+    def refresh_display(self) -> None:
+        animation = self._animations.get(self._current_state)
+        if animation and animation.frames:
+            self._show_frame(self._frame_index)
+            return
+        self._show_fallback()
+
     def current_display_size(self) -> tuple[int, int]:
         if self._display_size is not None:
             return self._display_size
         if not self._fallback.isNull():
             scaled = self._scale_pixmap(self._fallback)
             return scaled.width(), scaled.height()
-        return 75, 100
+        return self._placeholder_size()
 
     def _load_animations(self) -> None:
         idle_frames = self._load_frames_from_dir(IDLE_DIR)
@@ -131,6 +183,7 @@ class AnimationManager:
             AnimationState.WALK_LEFT,
             AnimationState.WALK_RIGHT,
             AnimationState.HAPPY,
+            AnimationState.DRINK,
             AnimationState.DRAGGING,
         ):
             frames = self._load_frames_from_dir(f"assets/{state.value}")
@@ -195,11 +248,12 @@ class AnimationManager:
 
     def _show_fallback(self) -> None:
         if self._fallback.isNull():
-            placeholder = QPixmap(75, 100)
+            width, height = self._placeholder_size()
+            placeholder = QPixmap(width, height)
             placeholder.fill(Qt.GlobalColor.transparent)
             self._label.setPixmap(placeholder)
             self._label.resize(placeholder.size())
-            self._display_size = (placeholder.width(), placeholder.height())
+            self._display_size = (width, height)
             return
 
         display = self._scale_pixmap(self._fallback)
@@ -207,16 +261,15 @@ class AnimationManager:
         self._label.resize(display.size())
         self._display_size = (display.width(), display.height())
 
-    def _scale_pixmap(self, pixmap: QPixmap) -> QPixmap:
-        if (
-            pixmap.width() <= MAX_DISPLAY_WIDTH
-            and pixmap.height() <= MAX_DISPLAY_HEIGHT
-        ):
-            return pixmap
+    def _placeholder_size(self) -> tuple[int, int]:
+        width = int(self._display_max_size * 0.75)
+        height = self._display_max_size
+        return width, height
 
+    def _scale_pixmap(self, pixmap: QPixmap) -> QPixmap:
         return pixmap.scaled(
-            MAX_DISPLAY_WIDTH,
-            MAX_DISPLAY_HEIGHT,
+            self._display_max_size,
+            self._display_max_size,
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )

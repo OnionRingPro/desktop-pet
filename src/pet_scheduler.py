@@ -12,13 +12,21 @@ from src.resource_utils import resource_path
 MESSAGES_CONFIG = "config/messages.json"
 DEFAULT_MOOD_IDLE_SECONDS = 45
 DEFAULT_MOOD_HAPPY_SECONDS = 12
+DEFAULT_MOOD_DRINK_SECONDS = 10
 DEFAULT_REMINDER_MINUTES = 45
+
+AUTO_MOOD_STATES = (
+    AnimationState.IDLE,
+    AnimationState.HAPPY,
+    AnimationState.DRINK,
+)
 
 
 @dataclass(frozen=True)
 class SchedulerConfig:
     mood_idle_ms: int
     mood_happy_ms: int
+    mood_drink_ms: int
     reminder_ms: int
 
 
@@ -26,6 +34,7 @@ def load_scheduler_config(config_path: Path | None = None) -> SchedulerConfig:
     path = config_path or resource_path(MESSAGES_CONFIG)
     idle_seconds = DEFAULT_MOOD_IDLE_SECONDS
     happy_seconds = DEFAULT_MOOD_HAPPY_SECONDS
+    drink_seconds = DEFAULT_MOOD_DRINK_SECONDS
     reminder_minutes = DEFAULT_REMINDER_MINUTES
 
     try:
@@ -33,17 +42,20 @@ def load_scheduler_config(config_path: Path | None = None) -> SchedulerConfig:
             data = json.loads(path.read_text(encoding="utf-8"))
             idle_seconds = int(data.get("mood_idle_seconds", idle_seconds))
             happy_seconds = int(data.get("mood_happy_seconds", happy_seconds))
+            drink_seconds = int(data.get("mood_drink_seconds", drink_seconds))
             reminder_minutes = int(data.get("reminder_minutes", reminder_minutes))
     except (OSError, json.JSONDecodeError, TypeError, ValueError):
         pass
 
     idle_seconds = max(idle_seconds, 5)
     happy_seconds = max(happy_seconds, 3)
+    drink_seconds = max(drink_seconds, 3)
     reminder_minutes = max(reminder_minutes, 1)
 
     return SchedulerConfig(
         mood_idle_ms=idle_seconds * 1000,
         mood_happy_ms=happy_seconds * 1000,
+        mood_drink_ms=drink_seconds * 1000,
         reminder_ms=reminder_minutes * 60 * 1000,
     )
 
@@ -82,12 +94,19 @@ class PetScheduler:
         self._mood_paused_remaining_ms = None
 
     def on_manual_state(self, state: AnimationState) -> None:
-        self._auto_mood = state in (AnimationState.IDLE, AnimationState.HAPPY)
+        self._auto_mood = state in AUTO_MOOD_STATES
         self._mood_paused_remaining_ms = None
         if self._auto_mood:
             self._schedule_next_mood()
         else:
             self._mood_timer.stop()
+
+    def _mood_duration(self, state: AnimationState) -> int:
+        if state is AnimationState.HAPPY:
+            return self._config.mood_happy_ms
+        if state is AnimationState.DRINK:
+            return self._config.mood_drink_ms
+        return self._config.mood_idle_ms
 
     def _schedule_next_mood(self, remaining_ms: int | None = None) -> None:
         if not self._auto_mood or self._pet._dragging:
@@ -95,16 +114,12 @@ class PetScheduler:
 
         animation = self._pet._animation
         current = self._pet._selected_state
-        if current not in (AnimationState.IDLE, AnimationState.HAPPY):
+        if current not in AUTO_MOOD_STATES:
             return
         if current not in animation.available_states():
             return
 
-        full_duration = (
-            self._config.mood_happy_ms
-            if current is AnimationState.HAPPY
-            else self._config.mood_idle_ms
-        )
+        full_duration = self._mood_duration(current)
         duration = (
             remaining_ms
             if remaining_ms is not None and remaining_ms > 0
@@ -112,19 +127,24 @@ class PetScheduler:
         )
         self._mood_timer.start(duration)
 
+    def _next_auto_mood_state(self, current: AnimationState) -> AnimationState | None:
+        available = set(self._pet._animation.available_states())
+        cycle = [state for state in AUTO_MOOD_STATES if state in available]
+        if current not in cycle:
+            return cycle[0] if cycle else None
+
+        index = cycle.index(current)
+        return cycle[(index + 1) % len(cycle)]
+
     def _on_mood_cycle(self) -> None:
         if not self._auto_mood or self._pet._dragging:
             self._schedule_next_mood()
             return
 
-        animation = self._pet._animation
-        available = set(animation.available_states())
         current = self._pet._selected_state
-
-        if current is AnimationState.IDLE and AnimationState.HAPPY in available:
-            self._pet._apply_animation_state(AnimationState.HAPPY, from_scheduler=True)
-        elif current is AnimationState.HAPPY and AnimationState.IDLE in available:
-            self._pet._apply_animation_state(AnimationState.IDLE, from_scheduler=True)
+        next_state = self._next_auto_mood_state(current)
+        if next_state is not None and next_state is not current:
+            self._pet._apply_animation_state(next_state, from_scheduler=True)
         else:
             self._schedule_next_mood()
 
