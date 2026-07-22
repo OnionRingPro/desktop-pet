@@ -19,5 +19,6 @@
   ],
   "pet_display_size": 100,
   "weather_city": "Montreal",
-  "reminder_minutes": 45
+  "reminder_minutes": 45,
+  "who_are_you_reply": "我叫ruru，是ycq的宝宝！"
 }

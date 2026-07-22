@@ -34,6 +34,9 @@ FRAME_MAX_WIDTH = 170
 FRAME_FONT_POINT_SIZE = 9
 
 
+DEFAULT_WHO_ARE_YOU_REPLY = "我是ruru，是ycq的宝宝！"
+
+
 def load_messages(config_path: Path | None = None) -> list[str]:
     path = config_path or resource_path(MESSAGES_CONFIG)
     try:
@@ -50,6 +53,19 @@ def load_messages(config_path: Path | None = None) -> list[str]:
         return cleaned or list(DEFAULT_MESSAGES)
     except (OSError, json.JSONDecodeError, TypeError, AttributeError, ValueError):
         return list(DEFAULT_MESSAGES)
+
+
+def load_who_are_you_reply(config_path: Path | None = None) -> str:
+    path = config_path or resource_path(MESSAGES_CONFIG)
+    try:
+        if path.exists():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            reply = str(data.get("who_are_you_reply", "")).strip()
+            if reply:
+                return reply
+    except (OSError, json.JSONDecodeError, TypeError, AttributeError, ValueError):
+        pass
+    return DEFAULT_WHO_ARE_YOU_REPLY
 
 
 class SpeechBubble(QWidget):

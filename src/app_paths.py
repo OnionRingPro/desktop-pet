@@ -15,3 +15,11 @@ def user_data_dir() -> Path:
 
 def todos_file() -> Path:
     return user_data_dir() / "todos.json"
+
+
+def notebook_file() -> Path:
+    return user_data_dir() / "notebook.md"
+
+
+def legacy_notes_file() -> Path:
+    return user_data_dir() / "notes.json"

@@ -48,7 +48,8 @@ from src.macos_window import (
 )
 from src.pet_scheduler import PetScheduler
 from src.resource_utils import resource_path
-from src.speech_bubble import SpeechBubble
+from src.speech_bubble import SpeechBubble, load_who_are_you_reply
+from src.note_panel import NotePanel
 from src.todo_panel import TodoPanel
 from src.todo_storage import format_pending_todos_message
 from src.weather_service import WeatherWorker
@@ -80,6 +81,13 @@ class PetWindow(QWidget):
         self._todo_panel.item_added.connect(
             lambda: self._speech_bubble.show_message(
                 "好，我帮你记下了！",
+                force_frame=True,
+            )
+        )
+        self._note_panel = NotePanel(self)
+        self._note_panel.note_saved.connect(
+            lambda: self._speech_bubble.show_message(
+                "好，记下了！",
                 force_frame=True,
             )
         )
@@ -222,6 +230,9 @@ class PetWindow(QWidget):
         menu.addAction(size_action)
 
         menu.addSeparator()
+        
+        who_action = menu.addAction("你是谁呀")
+        who_action.triggered.connect(self._who_are_you)
 
         weather_action = menu.addAction("问天气")
         weather_action.setEnabled(self._weather_worker is None)
@@ -229,6 +240,9 @@ class PetWindow(QWidget):
 
         todo_action = menu.addAction("帮我记一下")
         todo_action.triggered.connect(self._todo_panel.toggle_near_pet)
+
+        note_action = menu.addAction("帮我写一下")
+        note_action.triggered.connect(self._note_panel.toggle_near_pet)
 
         today_todo_action = menu.addAction("今日待办")
         today_todo_action.triggered.connect(self._show_today_todos)
@@ -250,6 +264,12 @@ class PetWindow(QWidget):
         worker.finished.connect(self._clear_weather_worker)
         self._weather_worker = worker
         worker.start()
+
+    def _who_are_you(self) -> None:
+        self._speech_bubble.show_message(
+            load_who_are_you_reply(),
+            force_frame=True,
+        )
 
     def _clear_weather_worker(self) -> None:
         self._weather_worker = None
@@ -473,6 +493,7 @@ class PetWindow(QWidget):
     def closeEvent(self, event: QCloseEvent) -> None:
         self._stop_sphere_hover_poll()
         self._todo_panel.hide()
+        self._note_panel.hide()
         self._scheduler.stop()
         self._animation.stop()
         self._speech_bubble.hide_bubble()

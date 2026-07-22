@@ -3,12 +3,14 @@ import traceback
 
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+from src.app_icon import apply_app_icon
 from src.pet_window import PetWindow
 
 
 def main() -> int:
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(True)
+    apply_app_icon(app)
 
     try:
         pet = PetWindow()
