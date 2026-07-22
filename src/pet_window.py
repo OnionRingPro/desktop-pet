@@ -49,6 +49,8 @@ from src.macos_window import (
 from src.pet_scheduler import PetScheduler
 from src.resource_utils import resource_path
 from src.speech_bubble import SpeechBubble
+from src.todo_panel import TodoPanel
+from src.todo_storage import format_pending_todos_message
 from src.weather_service import WeatherWorker
 
 FALLBACK_IMAGE = "assets/fallback.png"
@@ -74,6 +76,13 @@ class PetWindow(QWidget):
         layout.addWidget(self._label)
 
         self._speech_bubble = SpeechBubble(self)
+        self._todo_panel = TodoPanel(self)
+        self._todo_panel.item_added.connect(
+            lambda: self._speech_bubble.show_message(
+                "好，我帮你记下了！",
+                force_frame=True,
+            )
+        )
         self._animation = AnimationManager(self._label, self)
         self._selected_state = AnimationState.IDLE
         self._scheduler = PetScheduler(self)
@@ -218,6 +227,12 @@ class PetWindow(QWidget):
         weather_action.setEnabled(self._weather_worker is None)
         weather_action.triggered.connect(self._ask_weather)
 
+        todo_action = menu.addAction("帮我记一下")
+        todo_action.triggered.connect(self._todo_panel.toggle_near_pet)
+
+        today_todo_action = menu.addAction("今日待办")
+        today_todo_action.triggered.connect(self._show_today_todos)
+
         quit_action = menu.addAction("退出")
         quit_action.triggered.connect(QApplication.instance().quit)
         menu.exec(event.globalPos())
@@ -238,6 +253,11 @@ class PetWindow(QWidget):
 
     def _clear_weather_worker(self) -> None:
         self._weather_worker = None
+
+    def _show_today_todos(self) -> None:
+        message = format_pending_todos_message()
+        hide_ms = 6000 if "\n" in message else None
+        self._speech_bubble.show_message(message, hide_ms=hide_ms)
 
     def _apply_animation_state(
         self,
@@ -452,6 +472,7 @@ class PetWindow(QWidget):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self._stop_sphere_hover_poll()
+        self._todo_panel.hide()
         self._scheduler.stop()
         self._animation.stop()
         self._speech_bubble.hide_bubble()

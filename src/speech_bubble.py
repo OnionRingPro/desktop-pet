@@ -106,19 +106,36 @@ class SpeechBubble(QWidget):
     def show_for_pet(self) -> None:
         self.show_message(random.choice(self._messages))
 
-    def show_message(self, message: str) -> None:
-        self._apply_message_layout(message)
+    def show_message(
+        self,
+        message: str,
+        *,
+        hide_ms: int | None = None,
+        force_frame: bool = False,
+    ) -> None:
+        self._apply_message_layout(message, force_frame=force_frame)
         self._position_above_pet()
         self.show()
         apply_stay_visible_on_macos(self)
-        self._hide_timer.start(BUBBLE_AUTO_HIDE_MS)
+        duration = hide_ms if hide_ms is not None else BUBBLE_AUTO_HIDE_MS
+        if "\n" in message:
+            duration = max(duration, 6000)
+        self._hide_timer.start(duration)
 
-    def _apply_message_layout(self, message: str) -> None:
+    def _apply_message_layout(self, message: str, *, force_frame: bool = False) -> None:
         self._text_label.setText(message)
 
-        if self._frame_pixmap.isNull():
-            self._apply_fallback_layout(message)
+        if not self._frame_pixmap.isNull() and (force_frame or "\n" not in message):
+            self._apply_framed_layout(message)
             return
+
+        self._apply_fallback_layout(message)
+
+    def _apply_framed_layout(self, message: str) -> None:
+        self._text_label.setStyleSheet(
+            "QLabel { background: transparent; color: #2b2b2b; }"
+        )
+        self._text_label.setMaximumWidth(16777215)
 
         source_inner_width = FRAME_TEXT_RIGHT - FRAME_TEXT_LEFT
         metrics = QFontMetrics(self._text_label.font())
@@ -169,7 +186,8 @@ class SpeechBubble(QWidget):
     def _apply_fallback_layout(self, message: str) -> None:
         self._frame_label.clear()
         self._frame_label.resize(0, 0)
-        self._text_label.setMaximumWidth(150)
+        max_width = 220 if "\n" in message else 150
+        self._text_label.setMaximumWidth(max_width)
         self._text_label.setStyleSheet(
             "QLabel {"
             "  background-color: rgba(255, 255, 255, 230);"
