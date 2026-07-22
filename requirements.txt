@@ -1,0 +1,4 @@
+# PySide6 6.11.x: stable Qt6 bindings for macOS Apple Silicon transparent windows.
+PySide6>=6.11.0,<6.12.0
+# PyInstaller: used in phase four for DesktopPet.app packaging.
+PyInstaller>=6.0.0,<7.0.0
