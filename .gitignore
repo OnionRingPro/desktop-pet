@@ -47,3 +47,5 @@ htmlcov/
 assets/
 
 README.md
+
+build_mac.sh

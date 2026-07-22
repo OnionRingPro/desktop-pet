@@ -6,6 +6,7 @@ from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import (
     QActionGroup,
     QCloseEvent,
+    QCursor,
     QEnterEvent,
     QMouseEvent,
     QShowEvent,
@@ -29,15 +30,7 @@ from src.animation_manager import (
     MIN_DISPLAY_MAX_SIZE,
     STATE_LABELS,
 )
-from src.edge_dock import (
-    DockEdge,
-    clamp_fully_on_screen,
-    detect_snap_edge,
-    dock_to_edge,
-    expand_from_dock,
-    is_docked,
-    screen_geometry,
-)
+from src.edge_dock import clamp_fully_on_screen, screen_geometry
 from src.edge_sphere import (
     SphereDockMode,
     ball_position,
@@ -48,7 +41,11 @@ from src.edge_sphere import (
     screen_right_edge,
     should_sphere_dock,
 )
-from src.macos_window import apply_stay_visible_on_macos, enable_visible_when_inactive
+from src.macos_window import (
+    apply_stay_visible_on_macos,
+    enable_visible_when_inactive,
+    watch_active_space_changes,
+)
 from src.pet_scheduler import PetScheduler
 from src.resource_utils import resource_path
 from src.speech_bubble import SpeechBubble
@@ -62,7 +59,6 @@ class PetWindow(QWidget):
         super().__init__()
         self._dragging = False
         self._drag_offset = QPoint()
-        self._docked_edge = DockEdge.NONE
         self._sphere_mode = SphereDockMode.NONE
         self._sphere_anchor_y = 0
         self._sphere_allow_peep = False
@@ -79,6 +75,10 @@ class PetWindow(QWidget):
         self._animation = AnimationManager(self._label, self)
         self._selected_state = AnimationState.IDLE
         self._scheduler = PetScheduler(self)
+
+        self._sphere_hover_timer = QTimer(self)
+        self._sphere_hover_timer.setInterval(50)
+        self._sphere_hover_timer.timeout.connect(self._sync_sphere_hover)
 
         self._setup_window()
         self._check_assets()
@@ -97,10 +97,24 @@ class PetWindow(QWidget):
         enable_visible_when_inactive(self)
         enable_visible_when_inactive(self._speech_bubble)
 
+        app = QApplication.instance()
+        if app is not None:
+            app.applicationStateChanged.connect(self._on_app_state_changed)
+        watch_active_space_changes(self._schedule_sphere_refresh)
+
+    def _schedule_sphere_refresh(self) -> None:
+        QTimer.singleShot(0, self._refresh_sphere_interaction)
+
+    def _on_app_state_changed(self, _state: Qt.ApplicationState) -> None:
+        if self._sphere_mode is not SphereDockMode.NONE:
+            self._schedule_sphere_refresh()
+
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
         QTimer.singleShot(0, self._apply_macos_visibility)
         QTimer.singleShot(200, self._apply_macos_visibility)
+        if self._sphere_mode is not SphereDockMode.NONE:
+            QTimer.singleShot(0, self._refresh_sphere_interaction)
         self._scheduler.start()
 
     def _apply_macos_visibility(self) -> None:
@@ -133,7 +147,7 @@ class PetWindow(QWidget):
             self._show_sphere_ball()
         else:
             self._apply_window_size()
-            if not is_docked(self._docked_edge):
+            if self._sphere_mode is SphereDockMode.NONE:
                 clamp_fully_on_screen(self)
 
     def _show_missing_image_message(self, image_path: Path) -> None:
@@ -222,9 +236,6 @@ class PetWindow(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             if self._sphere_mode is not SphereDockMode.NONE:
                 self._exit_sphere_dock()
-            elif is_docked(self._docked_edge):
-                expand_from_dock(self, self._docked_edge)
-                self._docked_edge = DockEdge.NONE
 
             self._dragging = True
             self._scheduler.pause_mood()
@@ -239,6 +250,10 @@ class PetWindow(QWidget):
         if self._dragging and event.buttons() & Qt.MouseButton.LeftButton:
             global_pos = event.globalPosition().toPoint()
             self.move(global_pos - self._drag_offset)
+            event.accept()
+            return
+        if self._sphere_mode is not SphereDockMode.NONE and self._sphere_allow_peep:
+            self._sync_sphere_hover()
             event.accept()
             return
         super().mouseMoveEvent(event)
@@ -260,17 +275,7 @@ class PetWindow(QWidget):
         if should_sphere_dock(self, cursor_global=cursor_global):
             self._enter_sphere_dock()
             return
-        snap_edge = detect_snap_edge(self)
-        if snap_edge is DockEdge.RIGHT:
-            clamp_fully_on_screen(self)
-            return
-        if snap_edge is not DockEdge.NONE:
-            dock_to_edge(self, snap_edge)
-            self._docked_edge = snap_edge
-            self._speech_bubble.hide_bubble()
-            return
 
-        self._docked_edge = DockEdge.NONE
         clamp_fully_on_screen(self)
 
     def _apply_sphere_overlay_size(self, width: int, height: int) -> None:
@@ -287,7 +292,6 @@ class PetWindow(QWidget):
 
     def _enter_sphere_dock(self) -> None:
         self._sphere_anchor_y = self.frameGeometry().center().y()
-        self._docked_edge = DockEdge.RIGHT
         self._sphere_allow_peep = False
         self._animation.pause_for_overlay()
         self.setMouseTracking(True)
@@ -310,6 +314,45 @@ class PetWindow(QWidget):
     def _enable_sphere_peep(self) -> None:
         if self._sphere_mode is SphereDockMode.BALL:
             self._sphere_allow_peep = True
+            self._start_sphere_hover_poll()
+            self._sync_sphere_hover()
+
+    def _refresh_sphere_interaction(self) -> None:
+        if self._sphere_mode is SphereDockMode.NONE:
+            self._apply_macos_visibility()
+            return
+
+        self.setMouseTracking(True)
+        self._sphere_allow_peep = True
+        self._apply_macos_visibility()
+        self._show_sphere_ball()
+        self._start_sphere_hover_poll()
+        self._sync_sphere_hover()
+        self.update()
+        self.repaint()
+
+    def _start_sphere_hover_poll(self) -> None:
+        if not self._sphere_hover_timer.isActive():
+            self._sphere_hover_timer.start()
+
+    def _stop_sphere_hover_poll(self) -> None:
+        self._sphere_hover_timer.stop()
+
+    def _sphere_hover_rect(self):
+        rect = self.frameGeometry()
+        if self._sphere_mode is SphereDockMode.BALL:
+            return rect.adjusted(-12, -12, 4, 12)
+        return rect
+
+    def _sync_sphere_hover(self) -> None:
+        if not self._sphere_allow_peep or self._sphere_mode is SphereDockMode.NONE:
+            return
+
+        inside = self._sphere_hover_rect().contains(QCursor.pos())
+        if inside and self._sphere_mode is SphereDockMode.BALL:
+            self._show_peep()
+        elif not inside and self._sphere_mode is SphereDockMode.PEEK:
+            self._show_sphere_ball()
 
     def _show_sphere_ball(self) -> None:
         ball = load_ball_pixmap()
@@ -352,7 +395,7 @@ class PetWindow(QWidget):
 
         self._sphere_mode = SphereDockMode.NONE
         self._sphere_allow_peep = False
-        self._docked_edge = DockEdge.NONE
+        self._stop_sphere_hover_poll()
         self.setMouseTracking(False)
         self._clear_sphere_size_constraints()
         self._animation.resume_after_overlay()
@@ -366,13 +409,13 @@ class PetWindow(QWidget):
         self.move(x, y)
 
     def enterEvent(self, event: QEnterEvent) -> None:
-        if self._sphere_mode is SphereDockMode.BALL and self._sphere_allow_peep:
-            self._show_peep()
+        if self._sphere_mode is not SphereDockMode.NONE and self._sphere_allow_peep:
+            self._sync_sphere_hover()
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:
-        if self._sphere_mode is SphereDockMode.PEEK:
-            self._show_sphere_ball()
+        if self._sphere_mode is SphereDockMode.PEEK and self._sphere_allow_peep:
+            self._sync_sphere_hover()
         super().leaveEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
@@ -384,6 +427,7 @@ class PetWindow(QWidget):
         super().mouseDoubleClickEvent(event)
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        self._stop_sphere_hover_poll()
         self._scheduler.stop()
         self._animation.stop()
         self._speech_bubble.hide_bubble()
